@@ -1,0 +1,133 @@
+---
+title: "Principles of Data Visualization and Introduction to ggplot2"
+author: "Oluwakemi Omotunde"
+date: "September 4, 2017"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+I have provided you with data about the 5,000 fastest growing companies in the US, as
+compiled by Inc. magazine. Please use the data available at
+https://github.com/charleyferrari/CUNY_DATA608/tree/master/lecture1/Data
+
++ This assignment must be done in a single R script with ggplot2. Use of dplyr or plyr is
+encouraged but not required.
++ Images for question 'x' must be saved to the lecture1 directory as 'FigureX.jpg' or
+'FigureX.png' (ie for Question 1, Figure1.jpg, etc).
+
+```{r load data}
+comp.data <- read.csv("https://raw.githubusercontent.com/charleyferrari/CUNY_DATA608/master/lecture1/Data/inc5000_data.csv")
+comp.data <- as.data.frame(comp.data)
+View(comp.data)
+```
+
+Once we have our data loaded, we will gather the data for how many companies there are in each state. 
+
+```{r states}
+require(plyr)
+states.count <- count(comp.data, vars = "State")
+states.count <- arrange(states.count, desc(freq))
+states.count <- transform(states.count, State = reorder(State, freq)) #this ensures that our plot goes from greates to least
+```
+
+Now that we have our states in order by most companies to least, we can plot the frequency, keeping in mind that we are viewing on a portrait oriented screen. 
+
+```{r plot}
+require(ggplot2)
+ggplot(states.count, aes(x = State, y = freq)) +
+  geom_bar(stat = "identity") + coord_flip() + ylab("Number of Companies") +   
+  ggtitle("Fastest Growing Companies in the U.S. By State")
+ggsave("Figure1.png")
+#having the states as our Y axis and the frequency on the x bar, as well as using coord_flip() for our portrait screen.
+```
+
+Let's dig in on the State with the 3rd most companies in the data set. Imagine you work for the state and are interested in how many people are employed by companies in different industries employ. Create a plot of average employment by industry for companies in this state (only use cases with full data (user R's complete.cases() function). Your graph should show how variable the ranges are, and exclude outliers.
++ If we look at our plot from above, we can see that NY has the 3rd most companies in the data set. We will create a subset of just the companies in NY.
+
+```{r subset}
+ny.data <- subset(comp.data, State == "NY")
+ny.data
+```
+
+
++ I plan to first complete a boxplot and replace the outliers with NA, then use complete.cases() to work only casess with full data. 
+
+```{r boxplot}
+ny.plt <- boxplot(ny.data$Employees)
+ny.plt
+
+#now to find and replace out outliers
+
+ny.plt$out
+
+ny <- rep(NA, length(ny.plt$out))
+
+ny.employees <- ny.data$Employees
+
+#http://www.dummies.com/programming/r/how-to-remove-rows-with-missing-data-in-r/
+
+rep.outliers <- rep(NA, length(ny.plt$out))
+ny.data$Employees <- mapvalues(ny.employees, ny.plt$out, rep.outliers, warn_missing = FALSE)
+
+#now that we have replaced outliers with NA, we will go ahead a subset for just complete cases 
+
+complete.ny <- ny.data[complete.cases(ny.data), ]
+View(complete.ny)
+```
+
+Now that we have the data that we would like to work with, we will go ahead and plot.
++ I actually overlooked that it was asking to plot the averages so I will go ahead and find the average by industry first.
+
+```{r average}
+#https://www.rdocumentation.org/packages/plyr/versions/1.8.4/topics/ddply
+emp.ave <- ddply(complete.ny, "Industry", function(x) mean(x$Employees))
+colnames(emp.ave)[2] <- "AveEmployees"
+View(emp.ave)
+
+#to show how variable the ranges are, we will find the min and max and plot as well.
+
+emp.min <- ddply(complete.ny, "Industry", function(x) min(x$Employees))
+colnames(emp.min)[2] <- "MinEmployees"
+View(emp.min)
+
+emp.max <- ddply(complete.ny, "Industry", function(x) max(x$Employees))
+colnames(emp.max)[2] <- "MaxEmployees"
+View(emp.max)
+```
+
+Now to plot.
+
+```{r emp plot}
+ggplot(emp.ave, aes(x = Industry, y = AveEmployees, color = "Average")) +
+  geom_point() +
+  geom_point(aes(y = emp.min$MinEmployees, color = "Minimum")) +
+  geom_point(aes(y = emp.max$MaxEmployees, color = "Maximum")) +
+  theme(legend.title = element_blank()) +
+  ylab("Number of Employees") +
+  ggtitle(paste("Employment by Industry for Companies in New York")) + coord_flip()
+ggsave("Figure2.png")
+#our plot shows the max, min and mean of each industry for the companies in NY
+```
+
+Now imagine you work for an investor and want to see which industries generate the most revenue per employee. Create a chart that makes this information clear.
+
++ We want to take the total revenue by industry and divide by total employees by industry, then graph.
+
+```{r rev by emp}
+comp <- comp.data[complete.cases(comp.data),]
+
+rev.emp <- ddply(comp, "Industry", function(x) sum(x$Revenue)/sum(x$Employees))
+
+colnames(rev.emp)[2] <- "RevenueEmployee"
+
+ggplot(rev.emp, aes(x = Industry, y = RevenueEmployee)) +
+  geom_bar(stat = "identity") + ylab("Revenue per Employee") + 
+  ggtitle("Revenue per Employee by Industry") + coord_flip()
+ggsave("Figure3.png")
+```
+
