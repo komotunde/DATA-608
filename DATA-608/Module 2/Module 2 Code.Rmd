@@ -1,0 +1,104 @@
+---
+title: "DATA 608 Module 2"
+author: "Oluwakemi Omotunde"
+date: "September 21, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+We will be working with data about every tax lot in NYC. I have downloaded the files from http://www1.nyc.gov/site/planning/data-maps/open-data/dwn-pluto-mappluto.page. After numerous hours, I was able to use git lfs to upload the files to GitHub. I have a R-Script saved as "all_PLUTO_Data.R"combining the 5 csv files into 1 csv file. 
+
+First, let us load our combined csv file.
+
+```{r import csv}
+nyc.data <- read.csv("https://github.com/komotunde/DATA-608/blob/master/all_PLUTO_Data.csv?raw=true")
+
+head(nyc.data)
+tail(nyc.data)
+```
+
+We will now answer the questions provided. 
+
+1. After a few buildings collapse, the City of New York is going to begin investigating older buildings for safety. However, the city has a limited number of inspector and wanted to find a 'cut-off' data before most city building were constructed.Build a graph to help the city determine when most buildings were constructed. Is there anything in the results that causes you to question the accuracy of the data? (note: only look at buildings built since 1850)
+
+```{r subset}
+year.data <- subset(nyc.data, YearBuilt >= 1850, (select = c(Borough, YearBuilt)))
+```
+
+```{r graph}
+library(ggplot2)
+library(bigvis)
+year.data <- year.data[complete.cases(year.data),]
+cutoff <- median(year.data$YearBuilt)
+
+year.data <- with(year.data, condense(bin(YearBuilt, find_width(YearBuilt, round(2017-1850)/5))))
+year.plot <- ggplot(year.data, aes(x = YearBuilt, y = .count)) + geom_line()
+#This gives us a basic year of our data.I see a few things that I would like to change to give us a better view of the data, such as adding a vertical line and some labels. I will attempt to include a legend as well.
+
+year.plot <- year.plot + geom_vline(aes(xintercept = cutoff, linetype = "dashed", color = "blue")) + labs(title = "Count of Buildings by Year Built", x = "Year Built", y = "Amount") + geom_text(aes(x = 1942, y = 10000,color = "red", label = cutoff, show.legend = FALSE))
+                                                                                                                                                                                      
+year.plot
+
+ggsave("HW2Figure1.png")
+
+summary(year.data)
+
+#I was not sure how to remove the legend but I thought setting show.legend to false would do the trick. Unfortunately I was wrong. 
+```
+
+If I am interpreting this correctly, I believe that the majority of the building were built in 1931 and prior. One thing that could be reason for pause is the fact that the first year in our dataset is 0. The max year is 2040, which has not occurred yet and I think that is another cause for doubt or hesitation with our data. For the following sections, we will only use data between 1850 and 2016. 
+
+
+2. The city is particularly worried about building that were unusually tall when they were built, since bes-practices for safety hadn't yet been determined. Create a graph the shows how many buildings of a certain number of floors were built in each year (note: you may wayt to use a log scale for the number of buildings). It should be clear when 20-story buildings, 30 story buildings and 40 story buildings were first built in large numbers.
+
+We will need to create a subset of our data that includes the number of stories built. 
+
+```{r subset stories}
+stories <- subset(nyc.data, YearBuilt >= 1850 | YearBuilt <= 2016, (select = c(YearBuilt, NumFloors)))
+
+stories <- with(stories, condense(bin(NumFloors, 10), bin(YearBuilt,1)))
+
+stories <- na.omit(stories)
+
+#Now that we have our data for exploring the stories, we will plot. 
+```
+```{r stories plot}
+#with this plot, I will attempt to use autoplot, which I have never used before. If unable to, I will complete like I did the plot above. 
+
+autoplot(stories) + labs(title = "Stories in Building by Year Built", x = "Number of Stories", y = "Year Built")
+#I tried but it did not look anything like I was expecting so I will re-do using the method that I am used to.
+
+ggplot(stories, aes(x = YearBuilt, y = NumFloors, fill = .count)) + geom_raster() + scale_fill_gradient(low = "white", high = "blue", trans = 'log10') + scale_x_continuous(breaks = seq(1850, 2016, 10), limits = c(1850, 2016)) + scale_y_continuous(breaks = seq(0, 130, 10), limits = c(0,130)) + labs(title = "Stories in Building by Year Built", x = "Year Built", y = "Stories")
+
+ggsave("HW2Figure2.png")
+#https://www.rdocumentation.org/packages/survMisc/versions/0.4.2/topics/autoplot
+```
+
+If I am correct, 20 story buildings were first seen in large numbers in 1900, 30 story buildings in 1925, and 40 story building shortly after 1960. From this graph, you can see a bluer area when the number of stories are high, i.e the more stories, the bluer the year. 
+
+3. Your boss suspects that buildings constructed during the US's involvement in WWII(1941-1945) are more poorly constructed thatn those before and after the way due to the high cost of materials during those years. She thinks that, if you calculate assessed value per floor, you will see lower values for buildings at that time vs. before or after. Construct a chart/graph to see if she's right. 
+
+```{r subset value}
+#To get the assessed value of the building,we have to take the total assessed and subract what the land is assessed for. 
+
+#Also we cannot divide by 0 so we subset for floors > 0.
+
+#I realized I could subset this like I did the others. I will need dplyr.
+
+library(dplyr)
+values <- nyc.data %>% filter(YearBuilt >= 1850, YearBuilt <= 2016, NumFloors > 0) %>%
+  mutate(bld.as = round(AssessTot - AssessLand)/NumFloors) %>%
+  select(YearBuilt, bld.as)
+values <- with(values, condense(bin(YearBuilt, find_width(YearBuilt, 2016 - 1850)), bin(bld.as, find_width(bld.as, 1e4))))
+
+```
+```{r assess plot}
+ggplot(peel(values), aes(x =  YearBuilt, y = bld.as, fill = .count)) + geom_raster() + scale_fill_gradient(low = "white", high = "blue", trans = 'log10') + scale_x_continuous(breaks = seq(1850, 2016, 10), limits = c(1850, 2016)) + geom_vline(xintercept = c(1941, 1945), linetype = "solid", size = 1, color = "red", alpha = .2 ) + labs(title = "Value of Building by Year Built", x = "Year Built", y = "Value")
+
+ggsave("HW2Figure3.png")
+```
+
+The area bounded by the red is less blue than the areas surrounding it which would support my bosses hypothesis. 
